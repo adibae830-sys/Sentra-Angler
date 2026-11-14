@@ -80,6 +80,7 @@ export default function App() {
 
   const [booting, setBooting] = useState(true);
   const [hasUsers, setHasUsers] = useState(true);
+  const [serverApiUnavailable, setServerApiUnavailable] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [loadingData, setLoadingData] = useState(false);
@@ -116,11 +117,16 @@ export default function App() {
     let mounted = true;
     (async () => {
       try {
+        let apiDown = false;
         const [boot, user] = await Promise.all([
-          dataService.getBootstrapStatus().catch(() => ({ hasUsers: true })),
+          dataService.getBootstrapStatus().catch(() => {
+            apiDown = true;
+            return { hasUsers: true };
+          }),
           dataService.getCurrentUser().catch(() => null),
         ]);
         if (!mounted) return;
+        setServerApiUnavailable(apiDown && dataService.mode !== 'supabase');
         setHasUsers(boot.hasUsers);
         setCurrentUser(user);
         if (user) {
@@ -188,7 +194,13 @@ export default function App() {
   }
 
   if (!currentUser) {
-    return <AuthView hasUsers={hasUsers} onAuthenticated={handleAuthenticated} />;
+    return (
+      <AuthView
+        hasUsers={hasUsers}
+        serverApiUnavailable={serverApiUnavailable}
+        onAuthenticated={handleAuthenticated}
+      />
+    );
   }
 
   const isBendahara = currentUser.role === 'bendahara';

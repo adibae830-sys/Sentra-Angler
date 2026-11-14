@@ -27,10 +27,11 @@
 4. Pada **Build & Output Settings**:
    - Build Command: `npm run build`
    - Output Directory: `dist`
-5. Tambahkan **Environment Variables**:
-   - `VITE_SUPABASE_URL` = URL project Supabase Anda
+5. Tambahkan **Environment Variables** (tanpa tanda kutip `"` dan centang **Production**, **Preview**, serta **Development**):
+   - `VITE_SUPABASE_URL` = URL project Supabase Anda (contoh: `https://xyz.supabase.co`)
    - `VITE_SUPABASE_ANON_KEY` = Anon Key Supabase Anda
 6. Klik **Deploy**.
+   > **PENTING:** Jika Anda baru menambahkan atau mengubah Environment Variables *setelah* deploy berjalan, buka tab **Deployments → titik tiga (`⋮`) → Redeploy** (matikan *Use existing Build Cache*) agar Vite memasukkan konfigurasi Supabase ke hasil build.
 7. Setelah URL Vercel terbit (misalnya `https://sentra-angler.vercel.app`), kembali ke **Supabase Dashboard** -> **Authentication** -> **URL Configuration**:
    - Set **Site URL** menjadi `https://sentra-angler.vercel.app`.
    - Tambahkan `https://sentra-angler.vercel.app/**` ke **Redirect URLs**.

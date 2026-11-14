@@ -66,6 +66,12 @@ async function apiFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
     headers.Authorization = `Bearer ${token}`;
   }
   const res = await fetch(url, { ...options, headers, credentials: 'include' });
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(
+      'Konfigurasi Supabase belum terbaca pada build ini. Pastikan VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY sudah diisi di Vercel Environment Variables (tanpa tanda kutip), lalu klik Redeploy di Vercel.'
+    );
+  }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error((body as { error?: string }).error || `Permintaan gagal (${res.status})`);

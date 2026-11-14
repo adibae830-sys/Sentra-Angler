@@ -1,11 +1,42 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, loadEnv} from 'vite';
 import {VitePWA} from 'vite-plugin-pwa';
 
-export default defineConfig(() => {
+function pickEnv(env: Record<string, string>, keys: string[]): string {
+  for (const key of keys) {
+    const raw = env[key] || process.env[key];
+    if (raw && raw.trim()) {
+      return raw.trim().replace(/^["']+|["']+$/g, '').trim();
+    }
+  }
+  return '';
+}
+
+export default defineConfig(({mode}) => {
+  const env = loadEnv(mode, process.cwd(), '');
+
+  // Mendukung variabel manual (VITE_*) maupun integrasi otomatis Vercel-Supabase (NEXT_PUBLIC_* / SUPABASE_*)
+  const resolvedSupabaseUrl = pickEnv(env, [
+    'VITE_SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'SUPABASE_URL',
+  ]);
+  const resolvedSupabaseAnonKey = pickEnv(env, [
+    'VITE_SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+    'VITE_SUPABASE_PUBLISHABLE_KEY',
+    'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_ANON_KEY',
+    'SUPABASE_PUBLISHABLE_KEY',
+  ]);
+
   return {
+    define: {
+      'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(resolvedSupabaseUrl),
+      'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(resolvedSupabaseAnonKey),
+    },
     plugins: [
       react(),
       tailwindcss(),

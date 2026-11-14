@@ -5,10 +5,15 @@ import type { UserProfile } from '../types';
 
 interface AuthViewProps {
   hasUsers: boolean;
+  serverApiUnavailable?: boolean;
   onAuthenticated: (user: UserProfile) => void;
 }
 
-export const AuthView: React.FC<AuthViewProps> = ({ hasUsers, onAuthenticated }) => {
+export const AuthView: React.FC<AuthViewProps> = ({
+  hasUsers,
+  serverApiUnavailable = false,
+  onAuthenticated,
+}) => {
   const [mode, setMode] = useState<'login' | 'register'>(hasUsers ? 'login' : 'register');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -143,6 +148,23 @@ export const AuthView: React.FC<AuthViewProps> = ({ hasUsers, onAuthenticated })
                 : 'Akun baru akan terdaftar sebagai Anggota (hanya baca). Hubungi Bendahara untuk perubahan akses.'}
             </p>
           </div>
+
+          {serverApiUnavailable && dataService.mode !== 'supabase' && (
+            <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900 leading-relaxed">
+              <strong>Konfigurasi Supabase belum aktif pada build ini:</strong>
+              <ol className="mt-1.5 list-decimal pl-4 space-y-1">
+                <li>
+                  Pastikan <code>VITE_SUPABASE_URL</code> dan <code>VITE_SUPABASE_ANON_KEY</code>{' '}
+                  sudah diisi di <strong>Vercel → Settings → Environment Variables</strong> (tanpa
+                  tanda kutip).
+                </li>
+                <li>
+                  Buka tab <strong>Deployments</strong> di Vercel lalu klik{' '}
+                  <strong>Redeploy</strong> agar variabel terbaca saat proses build.
+                </li>
+              </ol>
+            </div>
+          )}
 
           {error && (
             <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
