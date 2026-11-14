@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="112" fill="#0B192C"/>
+  <rect x="20" y="20" width="472" height="472" rx="96" stroke="#1E3A5F" stroke-width="4"/>
+  <!-- Outer Compass / Reel Ring -->
+  <circle cx="256" cy="244" r="136" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="14"/>
+  <!-- Stylized Wave -->
+  <path d="M126 336C162 308 198 308 234 336C270 364 306 364 342 336C360 322 374 316 388 316" stroke="#F97316" stroke-width="24" stroke-linecap="round"/>
+  <!-- Stylized Angler Hook + Line -->
+  <path d="M256 108V274C256 307.137 229.137 334 196 334C162.863 334 136 307.137 136 274V250L168 274" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Orange Eye / Bobber Accent -->
+  <circle cx="256" cy="116" r="22" fill="#F97316"/>
+  <circle cx="256" cy="116" r="9" fill="#0B192C"/>
+  <!-- Currency / Shield Crosshair -->
+  <path d="M308 176H356M332 152V200" stroke="#F97316" stroke-width="18" stroke-linecap="round"/>
+</svg>
