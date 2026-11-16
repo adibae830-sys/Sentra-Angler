@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Anchor, ArrowRight, Eye, EyeOff, Lock, Mail, Phone, ShieldCheck, User } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, Lock, Mail, Phone, ShieldCheck, User } from 'lucide-react';
 import { dataService } from '../lib/dataService';
 import type { UserProfile } from '../types';
 
@@ -53,8 +53,12 @@ export const AuthView: React.FC<AuthViewProps> = ({
       <div className="lg:w-[46%] p-8 lg:p-14 flex flex-col justify-between text-white relative overflow-hidden">
         <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(circle_at_top_right,#F97316,transparent_55%)]" />
         <div className="relative z-10 flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center">
-            <Anchor className="w-6 h-6 text-orange-400" />
+          <div className="w-11 h-11 rounded-xl bg-[#0B192C] border border-white/15 overflow-hidden flex items-center justify-center shrink-0">
+            <img
+              src="/assets/aistudio/image_a84502d5.png"
+              alt="Logo SENTRA ANGLER"
+              className="w-full h-full object-cover"
+            />
           </div>
           <div>
             <span className="font-display text-lg font-bold tracking-tight text-white block leading-none">

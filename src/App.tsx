@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Anchor,
   ArrowLeftRight,
   Bell,
   CalendarDays,
@@ -191,8 +190,12 @@ export default function App() {
   if (booting) {
     return (
       <div className="min-h-screen bg-[#0B192C] flex flex-col items-center justify-center text-white p-6">
-        <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center">
-          <Anchor className="w-6 h-6 text-orange-400 animate-pulse" />
+        <div className="w-14 h-14 rounded-2xl bg-[#0B192C] border border-white/15 overflow-hidden flex items-center justify-center animate-pulse">
+          <img
+            src="/assets/aistudio/image_a84502d5.png"
+            alt="Logo SENTRA ANGLER"
+            className="w-full h-full object-cover"
+          />
         </div>
         <p className="mt-4 font-display text-lg font-bold tracking-tight">SENTRA ANGLER</p>
         <p className="mt-1 text-xs text-slate-400">Memuat buku kas digital...</p>
@@ -218,8 +221,12 @@ export default function App() {
       <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 bg-[#0B192C] text-white border-r border-slate-800">
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
-              <Anchor className="w-5 h-5 text-orange-400" />
+            <div className="w-10 h-10 rounded-xl bg-[#0B192C] border border-white/15 overflow-hidden flex items-center justify-center shrink-0">
+              <img
+                src="/assets/aistudio/image_a84502d5.png"
+                alt="Logo SENTRA ANGLER"
+                className="w-full h-full object-cover"
+              />
             </div>
             <div className="min-w-0">
               <span className="font-display text-base font-bold tracking-tight block truncate">
@@ -279,8 +286,12 @@ export default function App() {
         {/* Top Bar */}
         <header className="sticky top-0 z-30 h-14 lg:h-16 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="lg:hidden w-8 h-8 rounded-lg bg-[#0B192C] flex items-center justify-center shrink-0">
-              <Anchor className="w-4 h-4 text-orange-400" />
+            <div className="lg:hidden w-8 h-8 rounded-lg bg-[#0B192C] overflow-hidden flex items-center justify-center shrink-0">
+              <img
+                src="/assets/aistudio/image_a84502d5.png"
+                alt="Logo SENTRA ANGLER"
+                className="w-full h-full object-cover"
+              />
             </div>
             <div className="min-w-0">
               <h1 className="font-display text-sm sm:text-base font-bold text-slate-900 truncate">
