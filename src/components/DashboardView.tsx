@@ -2,7 +2,9 @@ import React, { useMemo, useState } from 'react';
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  CalendarDays,
   ChevronRight,
+  MapPin,
   Plus,
   Users,
   Wallet,
@@ -21,7 +23,11 @@ import {
 import { formatDateID, formatIDR } from '../lib/formatters';
 import type {
   CashSummary,
+  CommunityEvent,
   DashboardPeriod,
+  EventBudgetItem,
+  EventParticipant,
+  EventStatus,
   Member,
   Transaction,
   UserRole,
@@ -32,10 +38,14 @@ interface DashboardViewProps {
   summary: CashSummary;
   transactions: Transaction[];
   members: Member[];
+  events: CommunityEvent[];
+  eventBudgetItems: EventBudgetItem[];
+  eventParticipants: EventParticipant[];
   isOnline: boolean;
   onOpenInitialBalance: () => void;
   onAddTransaction: () => void;
   onNavigateTransactions: () => void;
+  onNavigateEvents: () => void;
 }
 
 const PERIOD_LABELS: Record<DashboardPeriod, string> = {
@@ -45,15 +55,33 @@ const PERIOD_LABELS: Record<DashboardPeriod, string> = {
   all: 'Semua periode',
 };
 
+const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
+  planned: 'Direncanakan',
+  ongoing: 'Berlangsung',
+  completed: 'Selesai',
+  cancelled: 'Dibatalkan',
+};
+
+const EVENT_STATUS_COLORS: Record<EventStatus, string> = {
+  planned: 'text-amber-700',
+  ongoing: 'text-blue-700',
+  completed: 'text-emerald-700',
+  cancelled: 'text-slate-500',
+};
+
 export const DashboardView: React.FC<DashboardViewProps> = ({
   role,
   summary,
   transactions,
   members,
+  events,
+  eventBudgetItems,
+  eventParticipants,
   isOnline,
   onOpenInitialBalance,
   onAddTransaction,
   onNavigateTransactions,
+  onNavigateEvents,
 }) => {
   const [period, setPeriod] = useState<DashboardPeriod>('this_month');
 
@@ -174,6 +202,56 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }, [filteredTransactions]);
 
   const latestTransactions = useMemo(() => activeTransactions.slice(0, 6), [activeTransactions]);
+
+  const upcomingEvents = useMemo(() => {
+    const activeEvents = events.filter((e) => e.status === 'ongoing' || e.status === 'planned');
+    const source =
+      activeEvents.length > 0
+        ? [...activeEvents].sort((a, b) => {
+            if (a.status !== b.status) return a.status === 'ongoing' ? -1 : 1;
+            return a.event_date.localeCompare(b.event_date);
+          })
+        : events.filter((e) => e.status === 'completed').slice(0, 3);
+
+    return source.slice(0, 3).map((ev) => {
+      const evBudgets = eventBudgetItems.filter((b) => b.event_id === ev.id);
+      const evTx = activeTransactions.filter((t) => t.event_id === ev.id);
+      const evParticipants = eventParticipants.filter((p) => p.event_id === ev.id);
+
+      const estIncome = evBudgets
+        .filter((b) => b.type === 'pemasukan')
+        .reduce((acc, b) => acc + b.estimated_amount, 0);
+      const estExpense = evBudgets
+        .filter((b) => b.type === 'pengeluaran')
+        .reduce((acc, b) => acc + b.estimated_amount, 0);
+      const actualIncome = evTx
+        .filter((t) => t.type === 'pemasukan')
+        .reduce((acc, t) => acc + t.amount, 0);
+      const actualExpense = evTx
+        .filter((t) => t.type === 'pengeluaran')
+        .reduce((acc, t) => acc + t.amount, 0);
+
+      let paidCount = 0;
+      if (ev.fee_per_member > 0) {
+        for (const p of evParticipants) {
+          const paid = evTx
+            .filter((t) => t.type === 'pemasukan' && t.member_id === p.member_id)
+            .reduce((acc, t) => acc + t.amount, 0);
+          if (paid >= ev.fee_per_member) paidCount += 1;
+        }
+      }
+
+      return {
+        event: ev,
+        estIncome,
+        estExpense,
+        actualIncome,
+        actualExpense,
+        participantCount: evParticipants.length,
+        paidCount,
+      };
+    });
+  }, [events, eventBudgetItems, eventParticipants, activeTransactions]);
 
   return (
     <div className="space-y-6">
@@ -447,6 +525,143 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Planned Events & RAB Overview */}
+      <div className="rounded-2xl bg-white border border-slate-200 p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+          <div>
+            <h3 className="font-display text-base font-bold text-slate-900">
+              Rencana Kegiatan & Estimasi RAB
+            </h3>
+            <p className="text-xs text-slate-500">
+              Agenda kegiatan komunitas beserta estimasi anggaran, realisasi kas, dan iuran peserta
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onNavigateEvents}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-[#0B192C] hover:text-orange-600 whitespace-nowrap shrink-0 cursor-pointer self-start sm:self-auto"
+          >
+            <span>Kelola Acara & RAB</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        {upcomingEvents.length === 0 ? (
+          <div className="py-8 text-center border border-dashed border-slate-200 rounded-xl px-4">
+            <CalendarDays className="w-8 h-8 text-slate-300 mx-auto" />
+            <p className="mt-2 text-sm font-semibold text-slate-800">
+              Belum ada rencana kegiatan terjadwal
+            </p>
+            <p className="mt-1 text-xs text-slate-500 max-w-md mx-auto">
+              {role === 'bendahara'
+                ? 'Buat rencana acara mancing dan susun estimasi RAB agar seluruh anggota dapat memantau kesiapan dana.'
+                : 'Bendahara belum mempublikasikan rencana kegiatan mendatang.'}
+            </p>
+            <button
+              type="button"
+              onClick={onNavigateEvents}
+              className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0B192C] hover:bg-[#132947] text-white text-xs font-semibold cursor-pointer"
+            >
+              <CalendarDays className="w-3.5 h-3.5 text-orange-400" />
+              <span>{role === 'bendahara' ? 'Buat Rencana Kegiatan' : 'Lihat Halaman Acara'}</span>
+            </button>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {upcomingEvents.map(
+              ({
+                event: ev,
+                estIncome,
+                estExpense,
+                actualIncome,
+                actualExpense,
+                participantCount,
+                paidCount,
+              }) => {
+                const expenseProgress =
+                  estExpense > 0 ? Math.min(100, Math.round((actualExpense / estExpense) * 100)) : 0;
+                return (
+                  <div
+                    key={ev.id}
+                    onClick={onNavigateEvents}
+                    className="py-4 first:pt-1 last:pb-1 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-slate-50/70 -mx-2 px-2 rounded-xl transition-colors cursor-pointer"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <span className="font-mono-num font-semibold text-orange-600">
+                          {ev.event_code}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span className="inline-flex items-center gap-1 font-mono-num">
+                          <CalendarDays className="w-3.5 h-3.5 text-slate-400" />
+                          {formatDateID(ev.event_date)}
+                        </span>
+                        {ev.location && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="inline-flex items-center gap-1 truncate">
+                              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span className="truncate">{ev.location}</span>
+                            </span>
+                          </>
+                        )}
+                        <span aria-hidden="true">·</span>
+                        <span className={`font-semibold ${EVENT_STATUS_COLORS[ev.status]}`}>
+                          {EVENT_STATUS_LABELS[ev.status]}
+                        </span>
+                      </div>
+
+                      <p className="mt-1 text-sm font-bold text-slate-900 truncate">{ev.title}</p>
+
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 font-mono-num">
+                        <span>
+                          Peserta: <strong className="text-slate-900">{participantCount}</strong>/
+                          {ev.target_participants}
+                        </span>
+                        {ev.fee_per_member > 0 && (
+                          <span>
+                            Iuran: <strong className="text-slate-900">{formatIDR(ev.fee_per_member)}</strong>{' '}
+                            ({paidCount} lunas)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="lg:w-80 shrink-0 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs font-mono-num">
+                        <span className="text-slate-500">
+                          Masuk:{' '}
+                          <strong className="text-emerald-700">{formatIDR(actualIncome)}</strong>
+                          {estIncome > 0 ? ` / ${formatIDR(estIncome)}` : ''}
+                        </span>
+                        <span className="text-slate-500">
+                          RAB Keluar:{' '}
+                          <strong className="text-slate-900">{formatIDR(estExpense)}</strong>
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            actualExpense > estExpense && estExpense > 0
+                              ? 'bg-red-600'
+                              : 'bg-orange-500'
+                          }`}
+                          style={{ width: `${Math.max(estExpense > 0 ? 4 : 0, expenseProgress)}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono-num">
+                        <span>Realisasi Keluar: {formatIDR(actualExpense)}</span>
+                        {estExpense > 0 && <span>{expenseProgress}% dari RAB</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bottom Row: Latest Transactions + Category Breakdown */}

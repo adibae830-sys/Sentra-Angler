@@ -407,6 +407,9 @@ export default function App() {
                   summary={snapshot.summary}
                   transactions={snapshot.transactions}
                   members={snapshot.members}
+                  events={snapshot.events}
+                  eventBudgetItems={snapshot.eventBudgetItems}
+                  eventParticipants={snapshot.eventParticipants}
                   isOnline={isOnline}
                   onOpenInitialBalance={() => setInitialBalModalOpen(true)}
                   onAddTransaction={() => {
@@ -415,6 +418,7 @@ export default function App() {
                     setTxModalOpen(true);
                   }}
                   onNavigateTransactions={() => setActiveTab('transactions')}
+                  onNavigateEvents={() => setActiveTab('events')}
                 />
               )}
 
