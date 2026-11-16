@@ -27,6 +27,7 @@ interface SettingsAdminViewProps {
   users: UserProfile[];
   isOnline: boolean;
   onOpenInitialBalance: () => void;
+  onOpenAuditLog?: () => void;
   onRefresh: () => Promise<void>;
 }
 
@@ -37,6 +38,7 @@ export const SettingsAdminView: React.FC<SettingsAdminViewProps> = ({
   users,
   isOnline,
   onOpenInitialBalance,
+  onOpenAuditLog,
   onRefresh,
 }) => {
   const [tab, setTab] = useState<'categories' | 'users' | 'guides'>(
@@ -144,14 +146,27 @@ export const SettingsAdminView: React.FC<SettingsAdminViewProps> = ({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="font-display text-xl font-bold text-slate-900">
-          Pengaturan, Kategori & Panduan
-        </h2>
-        <p className="text-xs text-slate-500">
-          Kelola kategori transaksi, hak akses pengguna, serta panduan deployment Supabase, Vercel &
-          PWA.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="font-display text-xl font-bold text-slate-900">
+            Pengaturan, Kategori & Panduan
+          </h2>
+          <p className="text-xs text-slate-500">
+            Kelola kategori transaksi, hak akses pengguna, serta panduan deployment Supabase, Vercel &
+            PWA.
+          </p>
+        </div>
+
+        {onOpenAuditLog && (
+          <button
+            type="button"
+            onClick={onOpenAuditLog}
+            className="lg:hidden inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-[#0B192C] shrink-0 cursor-pointer"
+          >
+            <Shield className="w-3.5 h-3.5 text-orange-500" />
+            <span>Buka Audit Log Bendahara</span>
+          </button>
+        )}
       </div>
 
       {/* Tabs */}

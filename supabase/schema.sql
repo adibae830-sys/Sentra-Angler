@@ -65,6 +65,7 @@ create table if not exists public.transactions (
   category_name text not null,
   amount numeric(14,2) not null check (amount > 0),
   member_id uuid references public.members(id) on delete set null,
+  event_id uuid,
   related_party text not null default '-',
   description text not null default '',
   created_by uuid references public.profiles(id) on delete set null,
@@ -104,7 +105,7 @@ create table if not exists public.audit_logs (
   id uuid primary key default gen_random_uuid(),
   table_name text not null,
   record_id text not null,
-  action text not null check (action in ('CREATE', 'UPDATE', 'SOFT_DELETE', 'RESTORE', 'INITIAL_BALANCE', 'ROLE_CHANGE', 'MEMBER_CHANGE', 'CATEGORY_CHANGE')),
+  action text not null check (action in ('CREATE', 'UPDATE', 'SOFT_DELETE', 'RESTORE', 'INITIAL_BALANCE', 'ROLE_CHANGE', 'MEMBER_CHANGE', 'CATEGORY_CHANGE', 'EVENT_CHANGE')),
   actor_id uuid references public.profiles(id) on delete set null,
   actor_name text not null,
   actor_role text not null,
@@ -407,3 +408,76 @@ create policy "Only bendahara can delete receipts"
 -- ============================================================================
 alter publication supabase_realtime add table public.transactions;
 alter publication supabase_realtime add table public.settings;
+
+-- ============================================================================
+-- MODUL ACARA, RAB & DAFTAR PESERTA
+-- ============================================================================
+create table if not exists public.events (
+  id uuid primary key default gen_random_uuid(),
+  event_code text not null unique,
+  title text not null,
+  event_date date not null,
+  location text not null default '',
+  description text not null default '',
+  target_participants integer not null default 20 check (target_participants >= 1 and target_participants <= 30),
+  fee_per_member numeric(14,2) not null default 0 check (fee_per_member >= 0),
+  status text not null default 'planned' check (status in ('planned', 'ongoing', 'completed', 'cancelled')),
+  created_by uuid references public.profiles(id) on delete set null,
+  created_by_name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.event_budget_items (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references public.events(id) on delete cascade,
+  type text not null check (type in ('pemasukan', 'pengeluaran')),
+  category_id uuid not null references public.categories(id) on delete restrict,
+  category_name text not null,
+  item_name text not null,
+  estimated_amount numeric(14,2) not null check (estimated_amount >= 0),
+  notes text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.event_participants (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references public.events(id) on delete cascade,
+  member_id uuid not null references public.members(id) on delete cascade,
+  is_attending boolean not null default true,
+  notes text,
+  created_at timestamptz not null default now(),
+  unique (event_id, member_id)
+);
+
+alter table public.transactions
+  drop constraint if exists fk_transactions_event;
+alter table public.transactions
+  add constraint fk_transactions_event foreign key (event_id) references public.events(id) on delete set null;
+create index if not exists idx_transactions_event on public.transactions(event_id);
+
+drop trigger if exists trg_events_updated on public.events;
+create trigger trg_events_updated before update on public.events for each row execute function public.set_updated_at();
+
+alter table public.events enable row level security;
+alter table public.event_budget_items enable row level security;
+alter table public.event_participants enable row level security;
+
+create policy "Authenticated users can view events"
+  on public.events for select to authenticated using (true);
+create policy "Only bendahara can manage events"
+  on public.events for all to authenticated
+  using (public.is_bendahara()) with check (public.is_bendahara());
+
+create policy "Authenticated users can view event budget items"
+  on public.event_budget_items for select to authenticated using (true);
+create policy "Only bendahara can manage event budget items"
+  on public.event_budget_items for all to authenticated
+  using (public.is_bendahara()) with check (public.is_bendahara());
+
+create policy "Authenticated users can view event participants"
+  on public.event_participants for select to authenticated using (true);
+create policy "Only bendahara can manage event participants"
+  on public.event_participants for all to authenticated
+  using (public.is_bendahara()) with check (public.is_bendahara());
+

@@ -1,14 +1,32 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Paperclip, Upload, X } from 'lucide-react';
 import { dataService } from '../lib/dataService';
-import { formatIDR, getTodayISO } from '../lib/formatters';
-import type { Category, Member, Transaction, TransactionType, UserProfile } from '../types';
+import { formatDateID, formatIDR, getTodayISO } from '../lib/formatters';
+import type {
+  Category,
+  CommunityEvent,
+  Member,
+  Transaction,
+  TransactionType,
+  UserProfile,
+} from '../types';
+
+export interface TransactionPrefill {
+  event_id?: string | null;
+  type?: TransactionType;
+  category_id?: string;
+  member_id?: string | null;
+  amount?: number;
+  description?: string;
+}
 
 interface TransactionModalProps {
   isOpen: boolean;
   editingTransaction: Transaction | null;
   categories: Category[];
   members: Member[];
+  events?: CommunityEvent[];
+  prefill?: TransactionPrefill | null;
   currentUser: UserProfile;
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -19,6 +37,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   editingTransaction,
   categories,
   members,
+  events = [],
+  prefill = null,
   currentUser,
   onClose,
   onSaved,
@@ -28,6 +48,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [categoryId, setCategoryId] = useState('');
   const [amountInput, setAmountInput] = useState('');
   const [memberId, setMemberId] = useState('');
+  const [eventId, setEventId] = useState('');
   const [relatedParty, setRelatedParty] = useState('');
   const [description, setDescription] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -49,8 +70,24 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setCategoryId(editingTransaction.category_id);
       setAmountInput(String(Math.round(editingTransaction.amount)));
       setMemberId(editingTransaction.member_id || '');
+      setEventId(editingTransaction.event_id || '');
       setRelatedParty(editingTransaction.related_party === '-' ? '' : editingTransaction.related_party);
       setDescription(editingTransaction.description || '');
+    } else if (prefill) {
+      const targetType: TransactionType = prefill.type || 'pemasukan';
+      setType(targetType);
+      setTransactionDate(getTodayISO());
+      const matchedCat =
+        categories.find((c) => c.id === prefill.category_id && c.type === targetType && c.is_active) ||
+        categories.find((c) => c.type === targetType && c.is_active);
+      setCategoryId(matchedCat?.id || '');
+      setAmountInput(prefill.amount && prefill.amount > 0 ? String(Math.round(prefill.amount)) : '');
+      const preMemberId = prefill.member_id || '';
+      setMemberId(preMemberId);
+      const preMember = members.find((m) => m.id === preMemberId);
+      setRelatedParty(preMember ? preMember.full_name : '');
+      setEventId(prefill.event_id || '');
+      setDescription(prefill.description || '');
     } else {
       setType('pemasukan');
       setTransactionDate(getTodayISO());
@@ -58,10 +95,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setCategoryId(firstCat?.id || '');
       setAmountInput('');
       setMemberId('');
+      setEventId('');
       setRelatedParty('');
       setDescription('');
     }
-  }, [isOpen, editingTransaction, categories]);
+  }, [isOpen, editingTransaction, prefill, categories, members]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -107,6 +145,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         category_name: selectedCategory?.name || '',
         amount: numericAmount,
         member_id: memberId || null,
+        event_id: eventId || null,
         related_party: partyName,
         description: description.trim(),
         attachment: uploadedAttachment,
@@ -275,6 +314,28 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               />
             </div>
           </div>
+
+          {events.length > 0 && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Tautkan ke Acara / Kegiatan (Opsional)
+              </label>
+              <select
+                value={eventId}
+                onChange={(e) => setEventId(e.target.value)}
+                className="w-full h-11 px-3.5 rounded-xl border border-slate-300 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500"
+              >
+                <option value="">-- Kas Rutin (Tidak Terikat Acara) --</option>
+                {events
+                  .filter((ev) => ev.status !== 'cancelled' || ev.id === eventId)
+                  .map((ev) => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.event_code} · {ev.title} ({formatDateID(ev.event_date)})
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">

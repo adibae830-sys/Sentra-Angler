@@ -4,6 +4,10 @@ import type {
   AuditLog,
   CashSummary,
   Category,
+  CommunityEvent,
+  EventBudgetItem,
+  EventParticipant,
+  EventStatus,
   Member,
   RealtimeNotification,
   Transaction,
@@ -21,6 +25,9 @@ export interface AppSnapshot {
   categories: Category[];
   members: Member[];
   transactions: Transaction[];
+  events: CommunityEvent[];
+  eventBudgetItems: EventBudgetItem[];
+  eventParticipants: EventParticipant[];
   auditLogs: AuditLog[];
   users: UserProfile[];
   cachedAt: string;
@@ -189,24 +196,45 @@ export const dataService = {
 
   async fetchAllSnapshot(): Promise<AppSnapshot> {
     if (isSupabaseConfigured && supabase) {
-      const [settingsRes, categoriesRes, membersRes, txRes, attRes, auditRes, usersRes] =
-        await Promise.all([
-          supabase.from('settings').select('*').eq('id', 'community_cash').single(),
-          supabase.from('categories').select('*').order('type').order('sort_order').order('name'),
-          supabase.from('members').select('*').order('member_code'),
-          supabase
-            .from('transactions')
-            .select('*')
-            .order('transaction_date', { ascending: false })
-            .order('created_at', { ascending: false }),
-          supabase.from('attachments').select('*'),
-          supabase
-            .from('audit_logs')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(300),
-          supabase.from('profiles').select('*').order('created_at'),
-        ]);
+      const [
+        settingsRes,
+        categoriesRes,
+        membersRes,
+        txRes,
+        attRes,
+        auditRes,
+        usersRes,
+        eventsRes,
+        budgetRes,
+        participantsRes,
+      ] = await Promise.all([
+        supabase.from('settings').select('*').eq('id', 'community_cash').single(),
+        supabase.from('categories').select('*').order('type').order('sort_order').order('name'),
+        supabase.from('members').select('*').order('member_code'),
+        supabase
+          .from('transactions')
+          .select('*')
+          .order('transaction_date', { ascending: false })
+          .order('created_at', { ascending: false }),
+        supabase.from('attachments').select('*'),
+        supabase
+          .from('audit_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(300),
+        supabase.from('profiles').select('*').order('created_at'),
+        supabase
+          .from('events')
+          .select('*')
+          .order('event_date', { ascending: false })
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('event_budget_items')
+          .select('*')
+          .order('type')
+          .order('created_at'),
+        supabase.from('event_participants').select('*').order('created_at'),
+      ]);
 
       const settings = (settingsRes.data || {
         id: 'community_cash',
@@ -251,6 +279,17 @@ export const dataService = {
         };
       });
 
+      const events = ((eventsRes.data || []) as CommunityEvent[]).map((e) => ({
+        ...e,
+        target_participants: Number(e.target_participants),
+        fee_per_member: Number(e.fee_per_member),
+      }));
+      const eventBudgetItems = ((budgetRes.data || []) as EventBudgetItem[]).map((b) => ({
+        ...b,
+        estimated_amount: Number(b.estimated_amount),
+      }));
+      const eventParticipants = (participantsRes.data || []) as EventParticipant[];
+
       const snapshot: AppSnapshot = {
         settings: { ...settings, initial_balance: initBal },
         summary: {
@@ -263,6 +302,9 @@ export const dataService = {
         categories: (categoriesRes.data || []) as Category[],
         members,
         transactions,
+        events,
+        eventBudgetItems,
+        eventParticipants,
         auditLogs: (auditRes.data || []) as AuditLog[],
         users: (usersRes.data || []) as UserProfile[],
         cachedAt: new Date().toISOString(),
@@ -271,16 +313,22 @@ export const dataService = {
       return snapshot;
     }
 
-    const [settingsWithSummary, categories, members, txRes, auditLogs, users] = await Promise.all([
-      apiFetch<AppSettings & { summary: CashSummary }>('/api/settings'),
-      apiFetch<Category[]>('/api/categories'),
-      apiFetch<Member[]>('/api/members'),
-      apiFetch<{ transactions: Transaction[]; summary: CashSummary }>(
-        '/api/transactions?includeDeleted=true'
-      ),
-      apiFetch<AuditLog[]>('/api/audit-logs'),
-      apiFetch<UserProfile[]>('/api/users'),
-    ]);
+    const [settingsWithSummary, categories, members, txRes, eventsRes, auditLogs, users] =
+      await Promise.all([
+        apiFetch<AppSettings & { summary: CashSummary }>('/api/settings'),
+        apiFetch<Category[]>('/api/categories'),
+        apiFetch<Member[]>('/api/members'),
+        apiFetch<{ transactions: Transaction[]; summary: CashSummary }>(
+          '/api/transactions?includeDeleted=true'
+        ),
+        apiFetch<{
+          events: CommunityEvent[];
+          budgetItems: EventBudgetItem[];
+          participants: EventParticipant[];
+        }>('/api/events'),
+        apiFetch<AuditLog[]>('/api/audit-logs'),
+        apiFetch<UserProfile[]>('/api/users'),
+      ]);
 
     const { summary, ...settings } = settingsWithSummary;
     const snapshot: AppSnapshot = {
@@ -289,6 +337,9 @@ export const dataService = {
       categories,
       members,
       transactions: txRes.transactions,
+      events: eventsRes.events,
+      eventBudgetItems: eventsRes.budgetItems,
+      eventParticipants: eventsRes.participants,
       auditLogs,
       users,
       cachedAt: new Date().toISOString(),
@@ -391,6 +442,7 @@ export const dataService = {
       category_name?: string;
       amount: number;
       member_id?: string | null;
+      event_id?: string | null;
       related_party: string;
       description: string;
       attachment?: {
@@ -421,6 +473,7 @@ export const dataService = {
           category_name: payload.category_name || '',
           amount: payload.amount,
           member_id: payload.member_id || null,
+          event_id: payload.event_id || null,
           related_party: payload.related_party || '-',
           description: payload.description || '',
           created_by: actor.id,
@@ -471,6 +524,7 @@ export const dataService = {
       category_name?: string;
       amount: number;
       member_id?: string | null;
+      event_id?: string | null;
       related_party: string;
       description: string;
       attachment?: {
@@ -493,6 +547,7 @@ export const dataService = {
           category_name: payload.category_name || before.category_name,
           amount: payload.amount,
           member_id: payload.member_id || null,
+          event_id: payload.event_id || null,
           related_party: payload.related_party || '-',
           description: payload.description || '',
         })
@@ -812,6 +867,226 @@ export const dataService = {
     await apiFetch('/api/users', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  },
+
+  async createEvent(
+    payload: {
+      title: string;
+      event_date: string;
+      location: string;
+      description: string;
+      target_participants: number;
+      fee_per_member: number;
+    },
+    actor: UserProfile
+  ): Promise<CommunityEvent> {
+    if (isSupabaseConfigured && supabase) {
+      const ym = payload.event_date.slice(0, 7).replace('-', '');
+      const { count, error: countErr } = await supabase
+        .from('events')
+        .select('id', { count: 'exact', head: true })
+        .like('event_code', `EVT-${ym}-%`);
+      if (countErr) {
+        throw new Error(
+          'Tabel acara belum tersedia di Supabase. Jalankan file supabase/migration_events.sql di SQL Editor Supabase terlebih dahulu.'
+        );
+      }
+      const eventCode = `EVT-${ym}-${String((count ?? 0) + 1).padStart(3, '0')}`;
+      const { data: created, error } = await supabase
+        .from('events')
+        .insert({
+          event_code: eventCode,
+          title: payload.title.trim(),
+          event_date: payload.event_date,
+          location: payload.location.trim(),
+          description: payload.description.trim(),
+          target_participants: Math.min(30, Math.max(1, payload.target_participants)),
+          fee_per_member: Math.max(0, payload.fee_per_member),
+          status: 'planned',
+          created_by: actor.id,
+          created_by_name: actor.full_name,
+        })
+        .select()
+        .single();
+      if (error || !created) throw new Error(error?.message || 'Gagal membuat acara.');
+
+      await supabase.from('audit_logs').insert({
+        table_name: 'events',
+        record_id: created.id,
+        action: 'EVENT_CHANGE',
+        actor_id: actor.id,
+        actor_name: actor.full_name,
+        actor_role: actor.role,
+        after_data: created,
+        summary: `Membuat rencana acara ${eventCode}: ${payload.title}`,
+      });
+      return created as CommunityEvent;
+    }
+
+    return apiFetch<CommunityEvent>('/api/events', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async updateEvent(
+    id: string,
+    before: CommunityEvent,
+    payload: {
+      title?: string;
+      event_date?: string;
+      location?: string;
+      description?: string;
+      target_participants?: number;
+      fee_per_member?: number;
+      status?: EventStatus;
+    },
+    actor: UserProfile
+  ): Promise<void> {
+    if (isSupabaseConfigured && supabase) {
+      const { data: updated, error } = await supabase
+        .from('events')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error || !updated) throw new Error(error?.message || 'Gagal memperbarui acara.');
+
+      await supabase.from('audit_logs').insert({
+        table_name: 'events',
+        record_id: id,
+        action: 'EVENT_CHANGE',
+        actor_id: actor.id,
+        actor_name: actor.full_name,
+        actor_role: actor.role,
+        before_data: before,
+        after_data: updated,
+        summary: `Memperbarui acara ${updated.event_code}: ${updated.title} (${updated.status})`,
+      });
+      return;
+    }
+
+    await apiFetch(`/api/events/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async addEventBudgetItem(
+    eventId: string,
+    eventCode: string,
+    payload: {
+      type: TransactionType;
+      category_id: string;
+      category_name: string;
+      item_name: string;
+      estimated_amount: number;
+      notes?: string;
+    },
+    actor: UserProfile
+  ): Promise<void> {
+    if (isSupabaseConfigured && supabase) {
+      const { data: created, error } = await supabase
+        .from('event_budget_items')
+        .insert({
+          event_id: eventId,
+          type: payload.type,
+          category_id: payload.category_id,
+          category_name: payload.category_name,
+          item_name: payload.item_name.trim(),
+          estimated_amount: Math.max(0, payload.estimated_amount),
+          notes: payload.notes?.trim() || null,
+        })
+        .select()
+        .single();
+      if (error || !created) throw new Error(error?.message || 'Gagal menambah pos RAB.');
+
+      await supabase.from('audit_logs').insert({
+        table_name: 'event_budget_items',
+        record_id: created.id,
+        action: 'EVENT_CHANGE',
+        actor_id: actor.id,
+        actor_name: actor.full_name,
+        actor_role: actor.role,
+        after_data: created,
+        summary: `Menambah pos RAB ${eventCode}: ${payload.item_name} (Rp ${payload.estimated_amount.toLocaleString('id-ID')})`,
+      });
+      return;
+    }
+
+    await apiFetch(`/api/events/${eventId}/budget-items`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteEventBudgetItem(
+    eventId: string,
+    item: EventBudgetItem,
+    actor: UserProfile
+  ): Promise<void> {
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.from('event_budget_items').delete().eq('id', item.id);
+      if (error) throw new Error(error.message);
+
+      await supabase.from('audit_logs').insert({
+        table_name: 'event_budget_items',
+        record_id: item.id,
+        action: 'EVENT_CHANGE',
+        actor_id: actor.id,
+        actor_name: actor.full_name,
+        actor_role: actor.role,
+        before_data: item,
+        summary: `Menghapus pos RAB: ${item.item_name}`,
+      });
+      return;
+    }
+
+    await apiFetch(`/api/events/${eventId}/budget-items/${item.id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async syncEventParticipants(
+    eventId: string,
+    eventCode: string,
+    memberIds: string[],
+    actor: UserProfile
+  ): Promise<void> {
+    if (isSupabaseConfigured && supabase) {
+      const { error: delErr } = await supabase
+        .from('event_participants')
+        .delete()
+        .eq('event_id', eventId);
+      if (delErr) throw new Error(delErr.message);
+
+      if (memberIds.length > 0) {
+        const rows = memberIds.map((mid) => ({
+          event_id: eventId,
+          member_id: mid,
+          is_attending: true,
+        }));
+        const { error: insErr } = await supabase.from('event_participants').insert(rows);
+        if (insErr) throw new Error(insErr.message);
+      }
+
+      await supabase.from('audit_logs').insert({
+        table_name: 'event_participants',
+        record_id: eventId,
+        action: 'EVENT_CHANGE',
+        actor_id: actor.id,
+        actor_name: actor.full_name,
+        actor_role: actor.role,
+        after_data: { event_id: eventId, participant_count: memberIds.length },
+        summary: `Memperbarui daftar peserta acara ${eventCode} (${memberIds.length} anggota)`,
+      });
+      return;
+    }
+
+    await apiFetch(`/api/events/${eventId}/participants`, {
+      method: 'PUT',
+      body: JSON.stringify({ member_ids: memberIds }),
     });
   },
 

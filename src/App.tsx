@@ -3,6 +3,7 @@ import {
   Anchor,
   ArrowLeftRight,
   Bell,
+  CalendarDays,
   FileBarChart2,
   LayoutDashboard,
   LogOut,
@@ -16,6 +17,7 @@ import {
 import { AuditLogView } from './components/AuditLogView';
 import { AuthView } from './components/AuthView';
 import { DashboardView } from './components/DashboardView';
+import { EventsView } from './components/EventsView';
 import { InitialBalanceModal } from './components/InitialBalanceModal';
 import { MembersView } from './components/MembersView';
 import {
@@ -25,7 +27,7 @@ import {
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { ReportsView } from './components/ReportsView';
 import { SettingsAdminView } from './components/SettingsAdminView';
-import { TransactionModal } from './components/TransactionModal';
+import { TransactionModal, type TransactionPrefill } from './components/TransactionModal';
 import { TransactionsView } from './components/TransactionsView';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { dataService, loadOfflineCache, type AppSnapshot } from './lib/dataService';
@@ -35,6 +37,7 @@ import type { RealtimeNotification, Transaction, UserProfile } from './types';
 type ActiveTab =
   | 'dashboard'
   | 'transactions'
+  | 'events'
   | 'members'
   | 'reports'
   | 'audit'
@@ -48,11 +51,14 @@ const NAV_ITEMS: Array<{
 }> = [
   { id: 'dashboard', label: 'Dashboard', shortLabel: 'Beranda', icon: LayoutDashboard },
   { id: 'transactions', label: 'Transaksi Kas', shortLabel: 'Kas', icon: ArrowLeftRight },
+  { id: 'events', label: 'Acara & RAB', shortLabel: 'Acara', icon: CalendarDays },
   { id: 'members', label: 'Anggota (Maks 30)', shortLabel: 'Anggota', icon: Users },
   { id: 'reports', label: 'Laporan PDF & Excel', shortLabel: 'Laporan', icon: FileBarChart2 },
   { id: 'audit', label: 'Audit Log', shortLabel: 'Audit', icon: ShieldCheck },
   { id: 'settings', label: 'Pengaturan & Panduan', shortLabel: 'Menu', icon: Settings },
 ];
+
+const MOBILE_NAV_ITEMS = NAV_ITEMS.filter((item) => item.id !== 'audit');
 
 function playNotificationPing() {
   try {
@@ -89,6 +95,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [txModalOpen, setTxModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [txPrefill, setTxPrefill] = useState<TransactionPrefill | null>(null);
   const [initialBalModalOpen, setInitialBalModalOpen] = useState(false);
 
   const [notifications, setNotifications] = useState<RealtimeNotification[]>([]);
@@ -326,6 +333,7 @@ export default function App() {
                 disabled={!isOnline}
                 onClick={() => {
                   setEditingTx(null);
+                  setTxPrefill(null);
                   setTxModalOpen(true);
                 }}
                 className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0 min-h-[40px] cursor-pointer"
@@ -392,6 +400,7 @@ export default function App() {
                   onOpenInitialBalance={() => setInitialBalModalOpen(true)}
                   onAddTransaction={() => {
                     setEditingTx(null);
+                    setTxPrefill(null);
                     setTxModalOpen(true);
                   }}
                   onNavigateTransactions={() => setActiveTab('transactions')}
@@ -407,10 +416,32 @@ export default function App() {
                   isOnline={isOnline}
                   onAddNew={() => {
                     setEditingTx(null);
+                    setTxPrefill(null);
                     setTxModalOpen(true);
                   }}
                   onEdit={(tx) => {
                     setEditingTx(tx);
+                    setTxPrefill(null);
+                    setTxModalOpen(true);
+                  }}
+                  onRefresh={loadData}
+                />
+              )}
+
+              {activeTab === 'events' && (
+                <EventsView
+                  events={snapshot.events}
+                  budgetItems={snapshot.eventBudgetItems}
+                  participants={snapshot.eventParticipants}
+                  transactions={snapshot.transactions}
+                  categories={snapshot.categories}
+                  members={snapshot.members}
+                  summary={snapshot.summary}
+                  currentUser={currentUser}
+                  isOnline={isOnline}
+                  onOpenTransactionModal={(prefill) => {
+                    setEditingTx(null);
+                    setTxPrefill(prefill);
                     setTxModalOpen(true);
                   }}
                   onRefresh={loadData}
@@ -446,6 +477,7 @@ export default function App() {
                   users={snapshot.users}
                   isOnline={isOnline}
                   onOpenInitialBalance={() => setInitialBalModalOpen(true)}
+                  onOpenAuditLog={() => setActiveTab('audit')}
                   onRefresh={loadData}
                 />
               )}
@@ -461,6 +493,7 @@ export default function App() {
           disabled={!isOnline}
           onClick={() => {
             setEditingTx(null);
+            setTxPrefill(null);
             setTxModalOpen(true);
           }}
           aria-label="Catat Transaksi Baru"
@@ -474,9 +507,10 @@ export default function App() {
       {/* Mobile Fixed Bottom Navigation (<= 15% viewport height) */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 pb-safe">
         <div className="grid grid-cols-6 h-16 items-center">
-          {NAV_ITEMS.map((item) => {
+          {MOBILE_NAV_ITEMS.map((item) => {
             const Icon = item.icon;
-            const active = activeTab === item.id;
+            const active =
+              activeTab === item.id || (item.id === 'settings' && activeTab === 'audit');
             return (
               <button
                 key={item.id}
@@ -501,10 +535,13 @@ export default function App() {
           editingTransaction={editingTx}
           categories={snapshot.categories}
           members={snapshot.members}
+          events={snapshot.events}
+          prefill={txPrefill}
           currentUser={currentUser}
           onClose={() => {
             setTxModalOpen(false);
             setEditingTx(null);
+            setTxPrefill(null);
           }}
           onSaved={loadData}
         />

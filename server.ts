@@ -140,7 +140,54 @@ db.exec(`
     initial_balance_set_by TEXT,
     updated_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS events (
+    id TEXT PRIMARY KEY,
+    event_code TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    event_date TEXT NOT NULL,
+    location TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    target_participants INTEGER NOT NULL DEFAULT 20,
+    fee_per_member REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned', 'ongoing', 'completed', 'cancelled')),
+    created_by TEXT,
+    created_by_name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS event_budget_items (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('pemasukan', 'pengeluaran')),
+    category_id TEXT NOT NULL,
+    category_name TEXT NOT NULL,
+    item_name TEXT NOT NULL,
+    estimated_amount REAL NOT NULL DEFAULT 0,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS event_participants (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    member_id TEXT NOT NULL,
+    is_attending INTEGER NOT NULL DEFAULT 1,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (event_id, member_id),
+    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+    FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
+  );
 `);
+
+// Safe column migration for transactions.event_id
+const txCols = db.prepare(`PRAGMA table_info(transactions)`).all() as Array<{ name: string }>;
+if (!txCols.some((c) => c.name === 'event_id')) {
+  db.exec(`ALTER TABLE transactions ADD COLUMN event_id TEXT`);
+}
 
 // Seed settings & default categories (idempotent)
 const nowIso = () => new Date().toISOString();
@@ -861,6 +908,7 @@ async function startServer() {
       category_id,
       amount,
       member_id,
+      event_id,
       related_party,
       description,
       attachment,
@@ -870,6 +918,7 @@ async function startServer() {
       category_id?: string;
       amount?: number;
       member_id?: string | null;
+      event_id?: string | null;
       related_party?: string;
       description?: string;
       attachment?: {
@@ -906,8 +955,8 @@ async function startServer() {
     const txCode = generateTransactionCode(transaction_date);
     const ts = nowIso();
     db.prepare(
-      `INSERT INTO transactions (id, transaction_code, transaction_date, type, category_id, category_name, amount, member_id, related_party, description, created_by, created_by_name, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO transactions (id, transaction_code, transaction_date, type, category_id, category_name, amount, member_id, event_id, related_party, description, created_by, created_by_name, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       txCode,
@@ -917,6 +966,7 @@ async function startServer() {
       String(cat.name),
       numAmount,
       member_id || null,
+      event_id || null,
       partyName,
       description?.trim() || '',
       req.user!.id,
@@ -987,6 +1037,7 @@ async function startServer() {
       category_id,
       amount,
       member_id,
+      event_id,
       related_party,
       description,
       attachment,
@@ -996,6 +1047,7 @@ async function startServer() {
       category_id?: string;
       amount?: number;
       member_id?: string | null;
+      event_id?: string | null;
       related_party?: string;
       description?: string;
       attachment?: {
@@ -1022,6 +1074,7 @@ async function startServer() {
 
     let partyName = related_party !== undefined ? related_party.trim() || '-' : String(before.related_party);
     const nextMemberId = member_id !== undefined ? member_id : (before.member_id as string | null);
+    const nextEventId = event_id !== undefined ? event_id : (before.event_id as string | null);
     if (nextMemberId) {
       const m = db.prepare(`SELECT full_name FROM members WHERE id = ?`).get(nextMemberId);
       if (m) partyName = String(m.full_name);
@@ -1029,7 +1082,7 @@ async function startServer() {
 
     const ts = nowIso();
     db.prepare(
-      `UPDATE transactions SET transaction_date = ?, type = ?, category_id = ?, category_name = ?, amount = ?, member_id = ?, related_party = ?, description = ?, updated_at = ?
+      `UPDATE transactions SET transaction_date = ?, type = ?, category_id = ?, category_name = ?, amount = ?, member_id = ?, event_id = ?, related_party = ?, description = ?, updated_at = ?
        WHERE id = ?`
     ).run(
       transaction_date || before.transaction_date,
@@ -1038,6 +1091,7 @@ async function startServer() {
       String(cat.name),
       nextAmount,
       nextMemberId || null,
+      nextEventId || null,
       partyName,
       description !== undefined ? description.trim() : before.description,
       ts,
@@ -1170,6 +1224,231 @@ async function startServer() {
     });
 
     res.json({ ok: true, summary: computeCashSummary() });
+  });
+
+  // --------------------------------------------------------------------------
+  // EVENTS, RAB (ESTIMASI) & PESERTA ACARA
+  // --------------------------------------------------------------------------
+  app.get('/api/events', requireAuth, (_req, res) => {
+    const events = db
+      .prepare(`SELECT * FROM events ORDER BY event_date DESC, created_at DESC`)
+      .all()
+      .map((e) => ({
+        ...e,
+        target_participants: Number(e.target_participants),
+        fee_per_member: Number(e.fee_per_member),
+      }));
+    const budgetItems = db
+      .prepare(`SELECT * FROM event_budget_items ORDER BY type ASC, created_at ASC`)
+      .all()
+      .map((b) => ({ ...b, estimated_amount: Number(b.estimated_amount) }));
+    const participants = db
+      .prepare(`SELECT * FROM event_participants ORDER BY created_at ASC`)
+      .all()
+      .map((p) => ({ ...p, is_attending: Boolean(p.is_attending) }));
+    res.json({ events, budgetItems, participants });
+  });
+
+  app.post('/api/events', requireAuth, requireBendahara, (req: AuthedRequest, res) => {
+    const { title, event_date, location, description, target_participants, fee_per_member } =
+      req.body as {
+        title?: string;
+        event_date?: string;
+        location?: string;
+        description?: string;
+        target_participants?: number;
+        fee_per_member?: number;
+      };
+    if (!title || !event_date) {
+      res.status(400).json({ error: 'Nama acara dan tanggal rencana wajib diisi.' });
+      return;
+    }
+    const ym = event_date.slice(0, 7).replace('-', '');
+    const countRow = db
+      .prepare(`SELECT COUNT(*) AS cnt FROM events WHERE event_code LIKE ?`)
+      .get(`EVT-${ym}-%`) as { cnt: number };
+    const eventCode = `EVT-${ym}-${String(Number(countRow?.cnt ?? 0) + 1).padStart(3, '0')}`;
+    const id = crypto.randomUUID();
+    const ts = nowIso();
+    const target = Math.min(30, Math.max(1, Number(target_participants) || 20));
+    const fee = Math.max(0, Number(fee_per_member) || 0);
+
+    db.prepare(
+      `INSERT INTO events (id, event_code, title, event_date, location, description, target_participants, fee_per_member, status, created_by, created_by_name, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'planned', ?, ?, ?, ?)`
+    ).run(
+      id,
+      eventCode,
+      title.trim(),
+      event_date,
+      location?.trim() || '',
+      description?.trim() || '',
+      target,
+      fee,
+      req.user!.id,
+      req.user!.full_name,
+      ts,
+      ts
+    );
+
+    const created = db.prepare(`SELECT * FROM events WHERE id = ?`).get(id)!;
+    writeAuditLog({
+      table_name: 'events',
+      record_id: id,
+      action: 'EVENT_CHANGE',
+      actor: req.user!,
+      after_data: created,
+      summary: `Membuat rencana acara ${eventCode}: ${title.trim()} (${event_date})`,
+    });
+    res.status(201).json(created);
+  });
+
+  app.put('/api/events/:id', requireAuth, requireBendahara, (req: AuthedRequest, res) => {
+    const { id } = req.params;
+    const before = db.prepare(`SELECT * FROM events WHERE id = ?`).get(id);
+    if (!before) {
+      res.status(404).json({ error: 'Data acara tidak ditemukan.' });
+      return;
+    }
+    const { title, event_date, location, description, target_participants, fee_per_member, status } =
+      req.body as {
+        title?: string;
+        event_date?: string;
+        location?: string;
+        description?: string;
+        target_participants?: number;
+        fee_per_member?: number;
+        status?: 'planned' | 'ongoing' | 'completed' | 'cancelled';
+      };
+    const ts = nowIso();
+    db.prepare(
+      `UPDATE events SET title = ?, event_date = ?, location = ?, description = ?, target_participants = ?, fee_per_member = ?, status = ?, updated_at = ?
+       WHERE id = ?`
+    ).run(
+      title?.trim() || before.title,
+      event_date || before.event_date,
+      location !== undefined ? location.trim() : before.location,
+      description !== undefined ? description.trim() : before.description,
+      target_participants !== undefined
+        ? Math.min(30, Math.max(1, Number(target_participants)))
+        : before.target_participants,
+      fee_per_member !== undefined ? Math.max(0, Number(fee_per_member)) : before.fee_per_member,
+      status || before.status,
+      ts,
+      id
+    );
+    const after = db.prepare(`SELECT * FROM events WHERE id = ?`).get(id)!;
+    writeAuditLog({
+      table_name: 'events',
+      record_id: id,
+      action: 'EVENT_CHANGE',
+      actor: req.user!,
+      before_data: before,
+      after_data: after,
+      summary: `Memperbarui rencana acara ${after.event_code}: ${after.title} (${after.status})`,
+    });
+    res.json(after);
+  });
+
+  app.post('/api/events/:id/budget-items', requireAuth, requireBendahara, (req: AuthedRequest, res) => {
+    const { id: eventId } = req.params;
+    const ev = db.prepare(`SELECT * FROM events WHERE id = ?`).get(eventId);
+    if (!ev) {
+      res.status(404).json({ error: 'Acara tidak ditemukan.' });
+      return;
+    }
+    const { type, category_id, item_name, estimated_amount, notes } = req.body as {
+      type?: 'pemasukan' | 'pengeluaran';
+      category_id?: string;
+      item_name?: string;
+      estimated_amount?: number;
+      notes?: string;
+    };
+    if ((type !== 'pemasukan' && type !== 'pengeluaran') || !category_id || !item_name) {
+      res.status(400).json({ error: 'Jenis, kategori, dan nama pos estimasi wajib diisi.' });
+      return;
+    }
+    const cat = db.prepare(`SELECT * FROM categories WHERE id = ?`).get(category_id);
+    if (!cat) {
+      res.status(400).json({ error: 'Kategori tidak valid.' });
+      return;
+    }
+    const itemId = crypto.randomUUID();
+    const est = Math.max(0, Number(estimated_amount) || 0);
+    db.prepare(
+      `INSERT INTO event_budget_items (id, event_id, type, category_id, category_name, item_name, estimated_amount, notes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      itemId,
+      eventId,
+      type,
+      category_id,
+      String(cat.name),
+      item_name.trim(),
+      est,
+      notes?.trim() || null,
+      nowIso()
+    );
+    const created = db.prepare(`SELECT * FROM event_budget_items WHERE id = ?`).get(itemId)!;
+    writeAuditLog({
+      table_name: 'event_budget_items',
+      record_id: itemId,
+      action: 'EVENT_CHANGE',
+      actor: req.user!,
+      after_data: created,
+      summary: `Menambahkan pos RAB ${ev.event_code}: ${item_name.trim()} (Rp ${est.toLocaleString('id-ID')})`,
+    });
+    res.status(201).json(created);
+  });
+
+  app.delete('/api/events/:id/budget-items/:itemId', requireAuth, requireBendahara, (req: AuthedRequest, res) => {
+    const { id: eventId, itemId } = req.params;
+    const before = db
+      .prepare(`SELECT * FROM event_budget_items WHERE id = ? AND event_id = ?`)
+      .get(itemId, eventId);
+    if (!before) {
+      res.status(404).json({ error: 'Pos RAB tidak ditemukan.' });
+      return;
+    }
+    db.prepare(`DELETE FROM event_budget_items WHERE id = ?`).run(itemId);
+    writeAuditLog({
+      table_name: 'event_budget_items',
+      record_id: itemId,
+      action: 'EVENT_CHANGE',
+      actor: req.user!,
+      before_data: before,
+      summary: `Menghapus pos RAB: ${before.item_name}`,
+    });
+    res.json({ ok: true });
+  });
+
+  app.put('/api/events/:id/participants', requireAuth, requireBendahara, (req: AuthedRequest, res) => {
+    const { id: eventId } = req.params;
+    const { member_ids } = req.body as { member_ids?: string[] };
+    const ev = db.prepare(`SELECT * FROM events WHERE id = ?`).get(eventId);
+    if (!ev) {
+      res.status(404).json({ error: 'Acara tidak ditemukan.' });
+      return;
+    }
+    const ids = Array.isArray(member_ids) ? member_ids : [];
+    db.prepare(`DELETE FROM event_participants WHERE event_id = ?`).run(eventId);
+    const insertPart = db.prepare(
+      `INSERT INTO event_participants (id, event_id, member_id, is_attending, created_at)
+       VALUES (?, ?, ?, 1, ?)`
+    );
+    const ts = nowIso();
+    for (const mid of ids) {
+      insertPart.run(crypto.randomUUID(), eventId, mid, ts);
+    }
+    writeAuditLog({
+      table_name: 'event_participants',
+      record_id: eventId,
+      action: 'EVENT_CHANGE',
+      actor: req.user!,
+      after_data: { event_id: eventId, participant_count: ids.length },
+      summary: `Memperbarui daftar peserta acara ${ev.event_code} (${ids.length} anggota)`,
+    });
+    res.json({ ok: true, count: ids.length });
   });
 
   // --------------------------------------------------------------------------

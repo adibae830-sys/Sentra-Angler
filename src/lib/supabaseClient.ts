@@ -5,7 +5,18 @@ function cleanEnv(val: unknown): string {
   return val.trim().replace(/^["']+|["']+$/g, '').trim();
 }
 
-const supabaseUrl = cleanEnv(import.meta.env.VITE_SUPABASE_URL);
+function normalizeSupabaseOrigin(rawUrl: string): string {
+  if (!rawUrl) return '';
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.origin;
+  } catch {
+    return rawUrl.replace(/\/+$/, '');
+  }
+}
+
+const rawSupabaseUrl = cleanEnv(import.meta.env.VITE_SUPABASE_URL);
+const supabaseUrl = normalizeSupabaseOrigin(rawSupabaseUrl);
 const supabaseAnonKey = cleanEnv(import.meta.env.VITE_SUPABASE_ANON_KEY);
 
 export const isSupabaseConfigured = Boolean(
@@ -13,6 +24,7 @@ export const isSupabaseConfigured = Boolean(
     supabaseAnonKey &&
     !supabaseUrl.includes('your-project-id') &&
     !supabaseAnonKey.includes('your-supabase-anon-key') &&
+    !supabaseAnonKey.startsWith('sb_secret_') &&
     (supabaseUrl.startsWith('https://') || supabaseUrl.startsWith('http://'))
 );
 

@@ -1,6 +1,7 @@
 export type UserRole = 'bendahara' | 'anggota';
 export type TransactionType = 'pemasukan' | 'pengeluaran';
 export type MemberStatus = 'active' | 'inactive';
+export type EventStatus = 'planned' | 'ongoing' | 'completed' | 'cancelled';
 export type DashboardPeriod = 'this_month' | 'last_month' | 'this_year' | 'all';
 export type ReportType =
   | 'kas_keseluruhan'
@@ -60,6 +61,43 @@ export interface Attachment {
   created_at: string;
 }
 
+export interface CommunityEvent {
+  id: string;
+  event_code: string;
+  title: string;
+  event_date: string;
+  location: string;
+  description: string;
+  target_participants: number;
+  fee_per_member: number;
+  status: EventStatus;
+  created_by?: string | null;
+  created_by_name: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface EventBudgetItem {
+  id: string;
+  event_id: string;
+  type: TransactionType;
+  category_id: string;
+  category_name: string;
+  item_name: string;
+  estimated_amount: number;
+  notes?: string | null;
+  created_at: string;
+}
+
+export interface EventParticipant {
+  id: string;
+  event_id: string;
+  member_id: string;
+  is_attending: boolean;
+  notes?: string | null;
+  created_at: string;
+}
+
 export interface Transaction {
   id: string;
   transaction_code: string;
@@ -69,6 +107,7 @@ export interface Transaction {
   category_name: string;
   amount: number;
   member_id?: string | null;
+  event_id?: string | null;
   related_party: string;
   description: string;
   created_by?: string | null;
@@ -90,7 +129,8 @@ export type AuditAction =
   | 'INITIAL_BALANCE'
   | 'ROLE_CHANGE'
   | 'MEMBER_CHANGE'
-  | 'CATEGORY_CHANGE';
+  | 'CATEGORY_CHANGE'
+  | 'EVENT_CHANGE';
 
 export interface AuditLog {
   id: string;
